@@ -2,6 +2,7 @@
 import os
 
 import setuptools
+import sys
 from setuptools import Extension, setup
 
 from Cython.Distutils import build_ext
@@ -34,11 +35,11 @@ def has_flag(compiler, flagname):
 
 
 def cpp_flag(compiler):
-    """Return the -std=c++[11/14] compiler flag.
+    """Return the -std=c++[11/14/17] compiler flag.
 
     The newer version is prefered over c++11 (when it is available).
     """
-    flags = ['-std=c++14', '-std=c++11']
+    flags = ['-std=c++17', '-std=c++14', '-std=c++11']
 
     for flag in flags:
         if has_flag(compiler, flag):
@@ -67,15 +68,37 @@ class get_pybind_include:
 class BuildExt(build_ext):
     """A custom build extension for adding compiler-specific options."""
 
-    def build_extensions(self):
-        """Call the funcionality to compile the extension."""
-        opts = []
-        opts.append('-DVERSION_INFO="%s"' %
-                    self.distribution.get_version())
-        opts.append(cpp_flag(self.compiler))
+    c_opts = {
+        'msvc': ['/EHsc'],
+        'unix': [],
+    }
+    l_opts = {
+        'msvc': [],
+        'unix': [],
+    }
 
+    if sys.platform == 'darwin':
+        darwin_opts = ['-stdlib=libc++', '-mmacosx-version-min=10.7']
+        c_opts['unix'] += darwin_opts
+        l_opts['unix'] += darwin_opts
+
+    def build_extensions(self):
+        """Actual compilation."""
+        ct = self.compiler.compiler_type
+        opts = self.c_opts.get(ct, [])
+        link_opts = self.l_opts.get(ct, [])
+        if ct == 'unix':
+            opts.append('-DVERSION_INFO="%s"' %
+                        self.distribution.get_version())
+            opts.append(cpp_flag(self.compiler))
+            if has_flag(self.compiler, '-fvisibility=hidden'):
+                opts.append('-fvisibility=hidden')
+        elif ct == 'msvc':
+            opts.append('/DVERSION_INFO=\\"%s\\"' %
+                        self.distribution.get_version())
         for ext in self.extensions:
             ext.extra_compile_args = opts
+            ext.extra_link_args = link_opts
         build_ext.build_extensions(self)
 
 
